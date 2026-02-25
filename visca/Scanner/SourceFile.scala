@@ -3,7 +3,7 @@ package visca.Scanner
 import java.io.{FileReader, BufferedReader, LineNumberReader, IOException, FileNotFoundException}
 import scala.compiletime.uninitialized
 
-class SourceFile(filename: String):
+class SourceFile(filename: String) {
   private var reader: LineNumberReader = uninitialized
 
   try
@@ -13,7 +13,7 @@ class SourceFile(filename: String):
       println(s"[# vc #]: can't read: $filename")
       sys.exit(1)
 
-  def getNextChar: Char =
+  def getNextChar: Char = {
     try
       val c = reader.read()
       if c == -1 then SourceFile.eof else c.toChar
@@ -21,8 +21,9 @@ class SourceFile(filename: String):
       case e: IOException =>
         println(s"Caught IOException: ${e.getMessage}")
         SourceFile.eof
+  }
 
-  def inspectChar(nthChar: Int): Char =
+  def inspectChar(nthChar: Int): Char = {
     var currentNth = nthChar
     var c: Int = -1
     try
@@ -36,6 +37,9 @@ class SourceFile(filename: String):
       case e: IOException =>
         println(s"Caught IOException: ${e.getMessage}")
         SourceFile.eof
+  }
+}
 
-object SourceFile:
+object SourceFile {
   val eof: Char = '\u0000'
+}
