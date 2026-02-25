@@ -1,0 +1,22 @@
+# OS specific
+.DS_Store
+
+# IDE and Project files
+.idea/
+*.iml
+out/
+.bsp/
+
+# Build artifacts (SBT)
+target/
+project/target/
+project/project/
+
+# Compiled files
+*.class
+*.tasty
+
+# Test files (Recursive)
+*.vc
+*.sol
+*.actual
