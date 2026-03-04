@@ -32,6 +32,23 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
         }
     }
 
+    @tailrec
+    private def fKleene(t: Token)(logic: Token => Result[LoopStatus]): Result[Token]= {
+        logic(t) match {
+            case Right(Continue(nextT)) => fKleene(nextT)(logic)
+            case Right(Stop) => Right(t)
+            case Left(err) => Left(err)
+        }
+    }
+
+    private def fOptional(t: Token)(logic: Token => Result[OptionalStatus]): Result[Token]= {
+        logic(t) match {
+            case Right(Matched(nextT)) => Right(nextT)
+            case Right(NotPresent) => Right(t)
+            case Left(err) => Left(err)
+        }
+    }
+
     private def fail(msg: String, t: Token): Result[Token]= {
         errorReporter.reportError(msg, t.spelling, t.position)
         Left(new SyntaxError())
@@ -106,7 +123,7 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
             tAfterInitDecl <- fParseInitDeclarator(t)
             y <- fKleene(tAfterInitDecl) { currT => currT.kind match {
                     case Token.COMMA =>
-                        val result = for {
+                        val result: Result[Token] = for {
                             t1 <- fMatch(Token.COMMA, currT)
                             t2 <- fParseInitDeclarator(t1)
                         } yield t2
@@ -124,10 +141,8 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
         for {
             tAfterDecl <- fParseDeclarator(t)
 
-            y <- fOptional(tAfterDecl) { currT =>
-                currT.kind match {
-                    case Token.EQ =>
-                        for {
+            y <- fOptional(tAfterDecl) { currT => currT.kind match {
+                    case Token.EQ => for {
                             t1 <- fMatch(Token.EQ, currT)
                             t2 <- fParseInitialiser(t1)
                         } yield Matched(t2)
@@ -138,11 +153,44 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
     }
 
     private def fParseDeclarator(t: Token): Result[Token]= {
-
+        for {
+            tAfterId <- fMatch(Token.ID, t)
+            y <- fOptional(tAfterId) { currT => currT.kind match {
+                    case Token.LBRACKET =>
+                        val result: Result[Token] = for {
+                            t1 <- fMatch(Token.LBRACKET, currT)
+                            t2 <- t1.kind match {
+                                case Token.INTLITERAL => fMatch(Token.INTLITERAL, t1)
+                                case _ => Right(t1)
+                            }
+                            t3 <- fMatch(Token.RBRACKET, t2)
+                        } yield t3
+                        result.map(Matched(_))
+                    case _ => Right(NotPresent)
+                }
+            }
+        } yield y
     }
 
     private def fParseInitialiser(t: Token): Result[Token]= {
-
+        t.kind match {
+            case Token.LCURLY => for {
+                t1 <- fMatch(Token.LCURLY, t)
+                t2 <- fParseExpr(t1)
+                t3 <- fKleene(t2) { currT => currT.kind match {
+                        case Token.COMMA =>
+                            val result = for {
+                                tAfterComma <- fMatch(Token.COMMA, currT)
+                                tAfterExpr <- fParseExpr(tAfterComma)
+                            } yield tAfterExpr
+                            result.map(Continue(_))
+                        case _ => Right(Stop)
+                    }
+                }
+                y <- fMatch(Token.RCURLY, t3)
+            } yield y
+            case _ => fParseExpr(t)
+        }
     }
 
     private def fParseType(t: Token): Result[Token]= {
@@ -274,22 +322,5 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
 
     private def fParseStringLiteral(t: Token): Result[Token]= {
         fMatch(Token.STRINGLITERAL, t)
-    }
-
-    @tailrec
-    private def fKleene(t: Token)(logic: Token => Result[LoopStatus]): Result[Token]= {
-        logic(t) match {
-            case Right(Continue(nextT)) => fKleene(nextT)(logic)
-            case Right(Stop) => Right(t)
-            case Left(err) => Left(err)
-        }
-    }
-
-    private def fOptional(t: Token)(logic: Token => Result[OptionalStatus]): Result[Token]= {
-        logic(t) match {
-            case Right(Matched(nextT)) => Right(nextT)
-            case Right(NotPresent) => Right(t)
-            case Left(err) => Left(err)
-        }
     }
 }
