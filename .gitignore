@@ -17,7 +17,8 @@ project/project/
 *.tasty
 
 # Test files (Recursive)
+*.sh
 *.vc
 *.sol
-*.actual
+*.out
 misc/

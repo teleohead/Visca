@@ -245,7 +245,7 @@ class Scanner(sourceFile: SourceFile, errorReporter: ErrorReporter) {
         val sp = SourcePosition(startState.ln, startState.ln, startState.col, startState.col)
         errorReporter.reportError("unterminated comment", "", sp)
         s
-      case '*' if peek(s) == '/' => accept(accept(accept(s)))
+      case '*' if peek(s) == '/' => accept(accept(s))
       case _ => skipTraditionalComment(startState, accept(s))
   }
 
