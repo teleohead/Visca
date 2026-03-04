@@ -41,10 +41,9 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
     }
 
     private def fOptional(t: Token)(logic: Token => Result[OptionalStatus]): Result[Token] = {
-        logic(t) match {
-            case Right(Matched(nextT)) => Right(nextT)
-            case Right(NotPresent) => Right(t)
-            case Left(err) => Left(err)
+        logic(t).map {
+            case Matched(next) => next
+            case NotPresent => t
         }
     }
 
@@ -57,17 +56,16 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
         if (t.kind == expected)
             Right(scanner.getToken)
         else
-            fail(s"\"${Token.spell(expected)}\"", t)
+            fail(s"\"${Token.spell(expected)}\" expected here", t)
     }
 
     private def fParseProgram(t: Token): Result[Token] = {
-        if (currentToken.kind != Token.EOF) {
-            for {
-                t1 <- fParseDecl(t)
-                y <- fParseProgram(t1)
-            } yield y
-        } else {
-            Right(t)
+        fKleene(t) { curr =>
+            curr.kind match {
+                case Token.EOF => Right(Stop)
+                case Token.VOID | Token.INT | Token.FLOAT | Token.BOOLEAN => fParseDecl(curr).map(Continue(_))
+                case _ => fail(s"\"${curr.spelling}\" wrong result type for a function", curr)
+            }
         }
     }
 
@@ -94,6 +92,7 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
                         }
                         t3 <- fMatch(Token.RBRACKET, t2)
                     } yield t3
+                case _ => Right(t)
             }
 
             tAfterInit <- tAfterDecl.kind match {
@@ -104,7 +103,15 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
                 case _ => Right(tAfterDecl)
             }
 
-            tAfterList <- fParseInitDeclaratorList(tAfterInit)
+            tAfterList <- fKleene(tAfterInit) { curr =>
+                curr.kind match {
+                    case Token.COMMA => for {
+                        t1 <- fMatch(Token.COMMA, curr)
+                        t2 <- fParseInitDeclarator(t1)
+                    } yield Continue(t2)
+                    case _ => Right(Stop)
+                }
+            }
 
             y <- fMatch(Token.SEMICOLON, tAfterList)
         } yield y
@@ -117,26 +124,6 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
         } yield y
     }
 
-    private def fParseInitDeclaratorList(t: Token): Result[Token] = {
-        for {
-            tAfterInitDecl <- fParseInitDeclarator(t)
-            y <- fKleene(tAfterInitDecl) { curr =>
-                curr.kind match {
-                    case Token.COMMA =>
-                        val result: Result[Token] = for {
-                            t1 <- fMatch(Token.COMMA, curr)
-                            t2 <- fParseInitDeclarator(t1)
-                        } yield t2
-                        result match {
-                            case Right(nextT) => Right(Continue(nextT))
-                            case Left(err) => Left(err)
-                        }
-                    case _ => Right(Stop)
-                }
-            }
-        } yield y
-    }
-
     private def fParseInitDeclarator(t: Token): Result[Token] = {
         for {
             tAfterDecl <- fParseDeclarator(t)
@@ -146,7 +133,7 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
                     case Token.EQ => for {
                             t1 <- fMatch(Token.EQ, curr)
                             t2 <- fParseInitialiser(t1)
-                        } yield Matched(t2)
+                    } yield Matched(t2)
                     case _ => Right(NotPresent)
                 }
             }
@@ -202,7 +189,7 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
     private def fParseIdentifier(t: Token): Result[Token] = {
         t.kind match {
             case Token.ID => fMatch(Token.ID, t)
-            case _ => fail("id expected", t)
+            case _ => fail("identifier expected", t)
         }
     }
 
@@ -215,7 +202,7 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
                         fParseDecl(curr).map(Continue(_))
                     case _ => Right(Stop)
                 }
-            } /* TODO t2 t3 */
+            }
             t3 <- fKleene(t2) { curr =>
                 curr.kind match {
                     case Token.RCURLY => Right(Stop)
@@ -224,11 +211,6 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
             }
             y <- fMatch(Token.RCURLY, t3)
         } yield y
-
-    }
-
-    private def fParseStmtList(t: Token): Result[Token] = {
-        /* TODO along with the function above */
     }
 
     private def fParseStmt(t: Token): Result[Token] = {
@@ -245,11 +227,36 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
     }
 
     private def fParseIfStmt(t: Token): Result[Token] = {
-
+        for {
+            t1 <- fMatch(Token.IF, t)
+            t2 <- fMatch(Token.LPAREN, t1)
+            t3 <- fParseExpr(t2)
+            t4 <- fMatch(Token.RPAREN, t3)
+            t5 <- fParseStmt(t4)
+            y <- fOptional(t5) { curr =>
+                curr.kind match {
+                    case Token.ELSE => for {
+                        y1 <- fMatch(Token.ELSE, curr)
+                        y2 <- fParseStmt(y1)
+                    } yield Matched(y2)
+                    case _ => Right(NotPresent)
+                }
+            }
+        } yield y
     }
 
     private def fParseForStmt(t: Token): Result[Token] = {
-
+        for {
+            t1 <- fMatch(Token.FOR, t)
+            t2 <- fMatch(Token.LPAREN, t1)
+            t3 <- fOptional(t2)(parseExprIfTypeIsNot(Token.SEMICOLON))
+            t4 <- fMatch(Token.SEMICOLON, t3)
+            t5 <- fOptional(t4)(parseExprIfTypeIsNot(Token.SEMICOLON))
+            t6 <- fMatch(Token.SEMICOLON, t5)
+            t7 <- fOptional(t6)(parseExprIfTypeIsNot(Token.RPAREN))
+            t8 <- fMatch(Token.RPAREN, t7)
+            y <- fParseStmt(t8)
+        } yield y
     }
 
     private def fParseWhileStmt(t: Token): Result[Token] = {
@@ -279,24 +286,14 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
     private def fParseReturnStmt(t: Token): Result[Token] = {
         for {
             t1 <- fMatch(Token.RETURN, t)
-            t2 <- fOptional(t1) { curr =>
-                curr.kind match {
-                    case Token.SEMICOLON => Right(NotPresent)
-                    case _ => fParseExpr(curr).map(Matched(_))
-                }
-            }
+            t2 <- fOptional(t1)(parseExprIfTypeIsNot(Token.SEMICOLON))
             y <- fMatch(Token.SEMICOLON, t2)
         } yield y
     }
 
     private def fParseExprStmt(t: Token): Result[Token] = {
         for {
-            tAfterExpr <- fOptional(t) { curr =>
-                curr.kind match {
-                    case Token.SEMICOLON => Right(NotPresent)
-                    case _ => fParseExpr(curr).map(Matched(_))
-                }
-            }
+            tAfterExpr <- fOptional(t)(parseExprIfTypeIsNot(Token.SEMICOLON))
             y <- fMatch(Token.SEMICOLON, tAfterExpr)
         } yield y
     }
@@ -325,8 +322,8 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
             t1 <- fParseCondAndExpr(t)
             y <- fKleene(t1) { curr =>
                 curr.kind match {
-                    case Token.ANDAND => for {
-                        t11 <- fMatch(Token.ANDAND, curr)
+                    case Token.OROR => for {
+                        t11 <- fMatch(Token.OROR, curr)
                         t12 <- fParseCondAndExpr(t11)
                     } yield Continue(t12)
                     case _ => Right(Stop)
@@ -445,7 +442,7 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
             case Token.INTLITERAL | Token.FLOATLITERAL |
                  Token.BOOLEANLITERAL | Token.STRINGLITERAL => fMatch(t.kind, t)
 
-            case _ => fail("identifier, (, int, float, bool or string expected", t)
+            case _ => fMatch(Token.SEMICOLON, t)
         }
     }
 
@@ -529,5 +526,12 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
 
     private def fParseStringLiteral(t: Token): Result[Token] = {
         fMatch(Token.STRINGLITERAL, t)
+    }
+
+    private val parseExprIfTypeIsNot: Int => Token => Result[OptionalStatus] = tokenType => t => {
+        t.kind match {
+            case `tokenType` => Right(NotPresent)
+            case _ => fParseExpr(t).map(Matched(_))
+        }
     }
 }

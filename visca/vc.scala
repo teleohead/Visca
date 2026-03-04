@@ -2,17 +2,19 @@ package visca
 
 import scala.compiletime.uninitialized
 import visca.Scanner.{Scanner, SourceFile, Token}
+import visca.Recogniser.Recogniser
 
 object vc {
 
   private var scanner: Scanner = uninitialized
   private var reporter: ErrorReporter = uninitialized
   private var currentToken: Token = uninitialized
+  private var recogniser: Recogniser = uninitialized
   private var inputFilename: String = uninitialized
 
   def main(args: Array[String]): Unit = {
-    if (args.length < 1) {
-      System.err.println("Please provide the source file as an argument.")
+    if (args.length != 1) {
+      System.err.println("Usage: java VC.vc filename\n")
       sys.exit(1)
     }
 
@@ -23,11 +25,12 @@ object vc {
     val source = new SourceFile(inputFilename)
     reporter = new ErrorReporter()
     scanner = new Scanner(source, reporter)
-    scanner.enableDebugging()
+    recogniser = new Recogniser(scanner, reporter)
 
-    currentToken = scanner.getToken
-    while (currentToken.kind != Token.EOF) {
-      currentToken = scanner.getToken
-    }
+    recogniser.parseProgram()
+    if (reporter.getNumErrors() == 0)
+        System.out.println("Compilation was successful.")
+    else
+        System.out.println("Compilation was unsuccessful.")
   }
 }

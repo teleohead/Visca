@@ -18,7 +18,7 @@ class ErrorReporter {
 
     if (message.indexOf('%') < 0) {
       print(message)
-      if (!tokenName.isEmpty) print(": " + tokenName)
+//      if (!tokenName.isEmpty) print(": " + tokenName)
     } else {
       var i = 0
       while (i < message.length) {
