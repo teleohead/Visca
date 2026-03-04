@@ -19,8 +19,7 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
 
     def parseProgram(): Unit = {
         try {
-            val result: Result[Token] = fParseProgram(currentToken)
-            result match {
+            fParseProgram(currentToken) match {
                 case Right(t) =>
                     currentToken = t
                     if (currentToken.kind != Token.EOF)
@@ -159,16 +158,14 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
             tAfterId <- fMatch(Token.ID, t)
             y <- fOptional(tAfterId) { curr =>
                 curr.kind match {
-                    case Token.LBRACKET =>
-                        val result: Result[Token] = for {
+                    case Token.LBRACKET => for {
                             t1 <- fMatch(Token.LBRACKET, curr)
                             t2 <- t1.kind match {
                                 case Token.INTLITERAL => fMatch(Token.INTLITERAL, t1)
                                 case _ => Right(t1)
                             }
                             t3 <- fMatch(Token.RBRACKET, t2)
-                        } yield t3
-                        result.map(Matched(_))
+                        } yield Matched(t3)
                     case _ => Right(NotPresent)
                 }
             }
@@ -182,12 +179,10 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
                 t2 <- fParseExpr(t1)
                 t3 <- fKleene(t2) { curr =>
                     curr.kind match {
-                        case Token.COMMA =>
-                            val result = for {
+                        case Token.COMMA => for {
                                 tAfterComma <- fMatch(Token.COMMA, curr)
                                 tAfterExpr <- fParseExpr(tAfterComma)
-                            } yield tAfterExpr
-                            result.map(Continue(_))
+                            } yield Continue(tAfterExpr)
                         case _ => Right(Stop)
                     }
                 }
@@ -307,63 +302,214 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
     }
 
     private def fParseExpr(t: Token): Result[Token] = {
-
+        fParseAssignmentExpr(t)
     }
 
     private def fParseAssignmentExpr(t: Token): Result[Token] = {
-
+        for {
+            t1 <- fParseCondOrExpr(t)
+            y <- fOptional(t1) { curr =>
+                curr.kind match {
+                    case Token.EQ => for {
+                        t11 <- fMatch(Token.EQ, curr)
+                        t12 <- fParseAssignmentExpr(t11)
+                    } yield Matched(t12)
+                    case _ => Right(NotPresent)
+                }
+            }
+        } yield y
     }
 
     private def fParseCondOrExpr(t: Token): Result[Token] = {
+        for {
+            t1 <- fParseCondAndExpr(t)
+            y <- fKleene(t1) { curr =>
+                curr.kind match {
+                    case Token.ANDAND => for {
+                        t11 <- fMatch(Token.ANDAND, curr)
+                        t12 <- fParseCondAndExpr(t11)
+                    } yield Continue(t12)
+                    case _ => Right(Stop)
+                }
+            }
+        } yield y
 
     }
 
     private def fParseCondAndExpr(t: Token): Result[Token] = {
-
+        for {
+            t1 <- fParseEqualityExpr(t)
+            y <- fKleene(t1) { curr =>
+                curr.kind match {
+                    case Token.ANDAND => for {
+                        t11 <- fMatch(Token.ANDAND, curr)
+                        t12 <- fParseEqualityExpr(t11)
+                    } yield Continue(t12)
+                    case _ => Right(Stop)
+                }
+            }
+        } yield y
     }
 
     private def fParseEqualityExpr(t: Token): Result[Token] = {
-
+        for {
+            t1 <- fParseRelExpr(t)
+            y <- fKleene(t1) { curr =>
+                curr.kind match {
+                    case Token.EQEQ | Token.NOTEQ => for {
+                        t11 <- fMatch(curr.kind, curr)
+                        t12 <- fParseRelExpr(t11)
+                    } yield Continue(t12)
+                    case _ => Right(Stop)
+                }
+            }
+        } yield y
     }
 
     private def fParseRelExpr(t: Token): Result[Token] = {
-
+        for {
+            t1 <- fParseAdditiveExpr(t)
+            y <- fKleene(t1) { curr =>
+                curr.kind match {
+                    case Token.LT | Token.LTEQ | Token.GT | Token.GTEQ => for {
+                        t11 <- fMatch(curr.kind, curr)
+                        t12 <- fParseAdditiveExpr(t11)
+                    } yield Continue(t12)
+                    case _ => Right(Stop)
+                }
+            }
+        } yield y
     }
 
     private def fParseAdditiveExpr(t: Token): Result[Token] = {
+        for {
+            t1 <- fParseMultiplicativeExpr(t)
+            y <- fKleene(t1) { curr =>
+                curr.kind match {
+                    case Token.PLUS | Token.MINUS => for {
+                        t11 <- fMatch(curr.kind, curr)
+                        t12 <- fParseMultiplicativeExpr(t11)
+                    } yield Continue(t12)
+                    case _ => Right(Stop)
+                }
+            }
+        } yield y
+    }
 
+    private def fParseMultiplicativeExpr(t: Token): Result[Token] = {
+        for {
+            t1 <- fParseUnaryExpr(t)
+            y <- fKleene(t1) { curr =>
+                curr.kind match {
+                    case Token.MULT | Token.DIV => for {
+                        t11 <- fMatch(curr.kind, curr)
+                        t12 <- fParseUnaryExpr(t11)
+                    } yield Continue(t12)
+                    case _ => Right(Stop)
+                }
+            }
+        } yield y
     }
 
     private def fParseUnaryExpr(t: Token): Result[Token] = {
-
+        t.kind match {
+            case Token.PLUS | Token.MINUS | Token.NOT =>
+                for {
+                    t1 <- fMatch(t.kind, t)
+                    t2 <- fParseUnaryExpr(t1)
+                } yield t2
+            case _ => fParsePrimaryExpr(t)
+        }
     }
 
     private def fParsePrimaryExpr(t: Token): Result[Token] = {
+        t.kind match {
+            case Token.ID => fParseIdentifier(t).flatMap { next =>
+                next.kind match {
+                    case Token.LPAREN => fParseArgList(next)
+                    case Token.LBRACKET => for {
+                        t1 <- fMatch(Token.LBRACKET, next)
+                        t2 <- fParseExpr(t1)
+                        t3 <- fMatch(Token.RBRACKET, t2)
+                    } yield t3
+                    case _ => Right(next)
+                }
+            }
 
+            case Token.LPAREN => for {
+                t1 <- fMatch(Token.LPAREN, t)
+                t2 <- fParseExpr(t1)
+                t3 <- fMatch(Token.RPAREN, t2)
+            } yield t3
+
+            case Token.INTLITERAL | Token.FLOATLITERAL |
+                 Token.BOOLEANLITERAL | Token.STRINGLITERAL => fMatch(t.kind, t)
+
+            case _ => fail("identifier, (, int, float, bool or string expected", t)
+        }
     }
 
     private def fParseParaList(t: Token): Result[Token] = {
-
+        for {
+            t1 <- fMatch(Token.LPAREN, t)
+            t2 <- t1.kind match {
+                case Token.RPAREN => Right(t1)
+                case _ => fParseProperParaList(t1)
+            }
+            y <- fMatch(Token.RPAREN, t2)
+        } yield y
     }
 
     private def fParseProperParaList(t: Token): Result[Token] = {
-
+        for {
+            t1 <- fParseParaDecl(t)
+            y <- fKleene(t1) { curr =>
+                curr.kind match {
+                    case Token.COMMA => for {
+                        t11 <- fMatch(Token.COMMA, curr)
+                        t12 <- fParseParaDecl(t11)
+                    } yield Continue(t12)
+                    case _ => Right(Stop)
+                }
+            }
+        } yield y
     }
 
     private def fParseParaDecl(t: Token): Result[Token] = {
-
+        for {
+            t1 <- fParseType(t)
+            y <- fParseDeclarator(t1)
+        } yield y
     }
 
     private def fParseArgList(t: Token): Result[Token] = {
-
+        for {
+            t1 <- fMatch(Token.LPAREN, t)
+            t2 <- t1.kind match {
+                case Token.RPAREN => Right(t1)
+                case _ => fParseProperArgList(t1)
+            }
+            y <- fMatch(Token.RPAREN, t2)
+        } yield y
     }
 
     private def fParseProperArgList(t: Token): Result[Token] = {
-
+        for {
+            t1 <- fParseArg(t)
+            y <- fKleene(t1) { curr =>
+                curr.kind match {
+                    case Token.COMMA => for {
+                        t11 <- fMatch(Token.COMMA, curr)
+                        t12 <- fParseArg(t11)
+                    } yield Continue(t12)
+                    case _ => Right(Stop)
+                }
+            }
+        } yield y
     }
 
     private def fParseArg(t: Token): Result[Token] = {
-
+        fParseExpr(t)
     }
 
     private def fParseIntLiteral(t: Token): Result[Token] = {
