@@ -1,6 +1,6 @@
 package visca.Recogniser
 
-import visca.Scanner.{Scanner, SourceFile, SourcePosition, Token}
+import visca.Scanner.{Scanner, Token}
 import visca.ErrorReporter
 
 import scala.annotation.tailrec
@@ -63,13 +63,13 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
         fKleene(t) { curr =>
             curr.kind match {
                 case Token.EOF => Right(Stop)
-                case Token.VOID | Token.INT | Token.FLOAT | Token.BOOLEAN => fParseDecl(curr).map(Continue(_))
+                case Token.VOID | Token.INT | Token.FLOAT | Token.BOOLEAN => fParseGlobalDecl(curr).map(Continue(_))
                 case _ => fail(s"\"${curr.spelling}\" wrong result type for a function", curr)
             }
         }
     }
 
-    private def fParseDecl(t: Token): Result[Token] = {
+    private def fParseGlobalDecl(t: Token): Result[Token] = {
         for {
             t1 <- fParseType(t)
             t2 <- fParseIdentifier(t1)
@@ -77,6 +77,14 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
                 case Token.LPAREN => fParseFuncDeclRemainder(t2)
                 case _ => fParseVarDeclRemainder(t2)
             }
+        } yield y
+    }
+
+    private def fParseLocalDecl(t: Token): Result[Token] = {
+        for {
+            t1 <- fParseType(t)
+            t2 <- fParseIdentifier(t1)
+            y <- fParseVarDeclRemainder(t2)
         } yield y
     }
 
@@ -199,7 +207,7 @@ class Recogniser(private val scanner: Scanner, private val errorReporter: ErrorR
             t2 <- fKleene(t1) { curr =>
                 curr.kind match {
                     case Token.VOID | Token.INT | Token.FLOAT | Token.BOOLEAN =>
-                        fParseDecl(curr).map(Continue(_))
+                        fParseLocalDecl(curr).map(Continue(_))
                     case _ => Right(Stop)
                 }
             }
